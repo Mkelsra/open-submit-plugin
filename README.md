@@ -1,2 +1,9 @@
-# open-submit-plugin
-OpenSubmit plugin for IMS Studio
+# Open Submit plugin
+
+**Open Submit** plugin for [IMS Studio](https://studio.imstocker.com/)
+
+Adds support for submitting to following microstock agencies:
+
+- [Pond 5](https://pond5.com)
+
+To install plugin open IMS Studio, go to Settings/Plugins and find plugin "Open Submit"

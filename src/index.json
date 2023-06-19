@@ -1,0 +1,24 @@
+{
+    "name": "open-submit",
+    "title": "Open Submit",
+    "version": "1.0.0",
+    "authors": "Mkelsra",
+    "website": "https://github.com/Mkelsra/open-submit-plugin",
+    "icon": { "@urlfile": "icon.png" },
+    "description": { "@t": "description" },
+    "content": [
+        { "@jsonfile": "pond5/destination.json" },
+        { "@jsonfile": "pond5/ftp.json" },
+        { "@jsonfile": "pond5/submit.json" }
+    ],
+    "api": "2.2.0",
+    "tags": ["submit"],
+    "locale": {
+        "en": {
+            "description": "Adds support submitting to Pond5"
+        },
+        "ru": {
+            "description": "Добавляет поддержку сабмита на Pond5"
+        }
+    }
+}

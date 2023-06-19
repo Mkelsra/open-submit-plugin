@@ -1,0 +1,36 @@
+{
+    "type": "destination",                  
+    "name": "pond5",
+    "title": "Pond5",
+    "icon": "https://www.pond5.com/favicon-96x96.png",
+    "content": {              
+        "maxNumberKeywords": 50,
+        "maxNumberCharsInTitle": 80,        
+        "maxNumberCharsInDesc": 1000,
+        "additionalProps": [
+            {
+                "name": "price",
+                "title": { "@t": "price" },
+                "type": "integer",
+                "options": {
+                    "max": 9999
+                }
+            },
+            {
+                "name": "looped",
+                "title": { "@t": "looped" },
+                "type": "boolean"
+            }
+        ]         
+    },
+    "locale": {        
+        "en": {
+            "price": "Price",
+            "looped": "Seamless looping video"
+        },
+        "ru": {
+            "price": "Цена",
+            "looped": "Видео с зацикливанием без разрывов"
+        }     
+    } 
+}

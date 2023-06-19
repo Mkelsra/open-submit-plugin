@@ -1,0 +1,75 @@
+{
+    "type": "ftp",
+    "title": "Pond5",
+    "name": "pond5",
+    "icon": "https://www.pond5.com/favicon-96x96.png",
+    "description": {
+        "@t": "description"
+    },
+    "content": {
+        "protocol": "ftp",
+        "port": null,
+        "host": "ftp.pond5.com",
+        "formats": {
+            "photo": {
+                "enabled": true,
+                "folder": null,
+                "additional": [],
+                "previewFirstly": false
+            },
+            "illustration": {
+                "enabled": true,
+                "type": "png",
+                "folder": null,
+                "previewFolder": null,
+                "additional": [],
+                "previewFirstly": false
+            },
+            "vector": {
+                "enabled": true,
+                "type": "zip",
+                "ext": [
+                    "eps"
+                ],
+                "folder": null,
+                "previewExt": [
+                    "jpg"
+                ],
+                "previewFolder": null,
+                "additional": [],
+                "previewFirstly": false
+            },
+            "video": {
+                "enabled": true,
+                "type": "video",
+                "ext": [
+                    "mov",
+                    "mp4"
+                ],
+                "folder": null,
+                "previewFolder": null,
+                "additional": [],
+                "previewFirstly": false
+            },
+            "release": {
+                "enabled": true,
+                "folder": "Release",
+                "additional": [],
+                "previewFirstly": false
+            }
+        },
+        "folder": null,
+        "translitirateFilenames": true,
+        "saveMplusCompat": false,
+        "destinationName": "pond5",
+        "useTitleAsFilename": false
+    },
+    "locale": {
+        "en": {
+            "description": "FTP-connection settings for Pond5"
+        },
+        "ru": {
+            "description": "Настройки FTP-подключения для Pond5"
+        }
+    }
+}

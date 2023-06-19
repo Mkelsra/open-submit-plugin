@@ -1,0 +1,222 @@
+{
+    "type": "submit",
+    "title": "Pond5",
+    "name": "pond5",
+    "icon": "https://www.pond5.com/favicon-96x96.png",
+    "description": { "@t": "description" },
+    "content": {
+        "destinationName":"pond5",
+        "properties": [
+            {
+                "name": "clickSubmit",
+                "type": "boolean",
+                "default": true,
+                "title": { "@t": "clickSubmitTitle"},
+                "tooltip": { "@t": "clickSubmitTooltip"}
+            }
+        ],
+        "buttons": [],
+        "process": {
+            "title": {"@t": "processName"},
+            "icon": "https://www.pond5.com/favicon-96x96.png",
+            "assetTypes": [
+                "photo",
+                "illustration",
+                "vector",
+                "video"
+            ],
+            "actions": [
+                {
+                    "name": "checkMetadata",
+                    "type": "metadataFilter",
+                    "args": {
+                        "filter": [
+                            "{len(meta.keywords) >= 5}",
+                            "{len(meta.title) >= 3}",
+                            "{words(meta.description) >= 3}"
+                        ],
+                        "failMessage": [
+                            {"@t": "messageTooFewKeywords" },
+                            {"@t": "messageTitleTooFewSymbols" },
+                            {"@t": "messageDescriptionTooFewWords" }
+                        ]
+                    },
+                    "pins": {
+                        "next": "auth",
+                        "fail": "@fail"
+                    }
+                },
+                {
+                    "name": "auth",
+                    "type": "browserAuth",
+                    "title": { "@t": "stepAuth" },
+                    "args": {
+                       "targetPage": "https://www.pond5.com/index.php?page=my_uploads",
+                       "targetPageMask": "https://www.pond5.com/*index.php?page=my_uploads",
+                       "destination": "pond5"
+                    },
+                    "pins": {
+                       "cancel": "@cancel",
+                      "next": "uploadCheck"
+                    }
+                },
+                {
+                    "name": "uploadCheck",
+                    "type": "uploadCheck",
+                    "title": { "@t": "stepUploadCheck" },
+                    "args": {
+                        "destination": "pond5"
+                    },
+                    "pins": {
+                        "next": "upload",
+                        "skip": "batch"
+                    }
+                },
+                {
+                    "name": "upload",
+                    "type": "upload",
+                    "title": { "@t": "stepUpload" },
+                    "args": {
+                        "skipAlreadyUploaded": true,
+                        "connection": "pond5"
+                    },
+                    "pins": {
+                        "fail": "uploadAttempt",
+                        "cancel": "@cancel",
+                        "next": "afterUploadDelay",
+                        "reject": "@fail"
+                    }
+                },
+                {
+                    "name": "afterUploadDelay",
+                    "type": "delay",
+                    "title": { "@t": "stepAfterUploadDelay" },
+                    "args": {
+                        "delay": 90
+                    },
+                    "pins": {
+                        "next": "batch"
+                    }
+                },
+                {
+                    "name": "uploadAttempt",
+                    "type": "attempt",
+                    "title": { "@t": "stepUploadAttempt" },
+                    "args": {
+                        "num": 3
+                    },
+                    "pins": {
+                        "fail": "@fail",
+                        "next": "uploadDelay"
+                    }
+                },
+                {
+                    "name": "uploadDelay",
+                    "type": "delay",
+                    "title": { "@t": "stepUploadDelay" },
+                    "args": {
+                        "delay": 300
+                    },
+                    "pins": {
+                        "next": "upload"
+                    }
+                },
+                {
+                    "name": "batch",
+                    "type": "batch",
+                    "title": { "@t": "stepBatch" },
+                    "args": {
+                        "num": 5
+                    },
+                    "pins": {
+                            "next": "submit"
+                    }
+                },
+                {
+                    "name": "submit",
+                    "type": "browserSubmit",
+                    "title": { "@t": "stepSubmit" },
+                    "args": {
+                        "destination": "pond5",
+                        "connection": "pond5",
+                        "targetPage": "https://www.pond5.com/index.php?page=my_uploads",
+                        "submitCode": { "@textfile": "submit.js" },
+                        "dictionaries": { "@jsonfile": "dicts.json" }
+                    },
+                    "pins": {
+                        "fail": "@fail",
+                        "notfound": "awaitAttempt",
+                        "unauthorized": "auth"
+                    }
+                }, 
+                {
+                    "name": "awaitAttempt",
+                    "type": "attempt",
+                    "title": { "@t": "stepAwaitAttempt" },
+                    "args": {
+                        "num": 5,
+                        "failMessage": { "@t": "notFoundFailMessage" }
+                    },
+                    "pins": {
+                        "next": "awaitDelay",
+                        "fail": "@fail"
+                    }
+                }, 
+                {
+                    "name": "awaitDelay",
+                    "type": "delay",
+                    "title": { "@t": "stepAwaitDelay" },
+                    "args": {
+                        "delay": 300
+                    },
+                    "pins": {
+                            "next": "submit"
+                        }
+                }
+             ]
+
+        }
+    },
+    "locale": {
+        "en": {
+            "description": "Upload & Submit to Pond5. Releases are supported",
+            "clickSubmitTitle": "Click \"submit\" button",
+            "clickSubmitTooltip": "Turning off the checkbox will allow you to double-check the data before clicking on the submit button (files with metadata will already be ready)",
+            "processName": "Submit to Pond5",
+            "notFoundFailMessage": "Uploaded file not found on the microstock site",
+            "messageTitleTooFewSymbols": "Min symbols in title: 3",
+            "messageDescriptionTooFewWords": "Min words in description: 3",
+            "messageTooFewKeywords": "Too few keywords: min is 5",
+            "stepAuth": "Authorization",
+            "stepUploadCheck": "uploadCheck",
+            "stepUpload": "stepUpload",
+            "stepAfterUploadDelay": "stepAfterUploadDelay",
+            "stepUploadAttempt": "stepUploadAttempt",
+            "stepUploadDelay": "stepUploadDelay",
+            "stepBatch": "stepBatch",
+            "stepSubmit": "stepSubmit",
+            "stepAwaitAttempt": "stepAwaitAttempt",
+            "stepAwaitDelay": "stepAwaitDelay"
+        },
+        "ru": {
+            "description": "Загрузка и сабмит на Pond5. Есть поддержка релизов",
+            "clickSubmitTitle": "Нажать кнопку сабмита",
+            "clickSubmitTooltip": "Выключение галочки позволит Вам перепроверить данные перед тем, как нажать на кнопку сабмита (файлы с метаданными уже будут готовы)",
+            "processName": "Сабмит на Pond5",
+            "notFoundFailMessage": "Загруженный файл не найден на стоке",
+            "messageTitleTooFewSymbols": "Мин. число символов в названии: 3",
+            "messageDescriptionTooFewWords": "Минимальное число слов в описании: 3",
+            "messageTooFewKeywords": "Слишком мало ключевых слов: минимум 5",
+            "stepAuth": "Авторизация",
+            "stepUploadCheck": "uploadCheck",
+            "stepUpload": "stepUpload",
+            "stepAfterUploadDelay": "stepAfterUploadDelay",
+            "stepUploadAttempt": "stepUploadAttempt",
+            "stepUploadDelay": "stepUploadDelay",
+            "stepBatch": "stepBatch",
+            "stepSubmit": "stepSubmit",
+            "stepAwaitAttempt": "stepAwaitAttempt",
+            "stepAwaitDelay": "stepAwaitDelay"
+        }
+    }
+}
