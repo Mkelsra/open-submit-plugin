@@ -34,8 +34,8 @@ const findAssetsOnPage = (assets: Asset[], root: Document): { found: FoundAsset[
     const foundAssetIds = new Set<string>()
     const foundAssets: FoundAsset[] = []
 
-    const cells = root.querySelectorAll<HTMLTableCellElement>('#tech_table .UserAccountTable-cell.p5_of')
-    for (const cell of cells){
+    const rows = root.querySelectorAll<HTMLTableCellElement>('#tech_table .UploadsTable-row')
+    for (const row of rows){
         if (foundAssets.length === assets.length) {
             break;
         }
@@ -46,16 +46,21 @@ const findAssetsOnPage = (assets: Asset[], root: Document): { found: FoundAsset[
             if (foundAssetIds.has(asset.assetId)){
                 continue;
             }
-            
-            if (cell.innerText.trim().toLowerCase().startsWith(asset.uploadedBasename.trim().toLocaleLowerCase() + ".")){
-                const stockId = cell.parentElement && cell.parentElement.getAttribute('itemid')
-                if (stockId){
-                    asset.log('Asset found with id ' + stockId)
-                    foundAssetIds.add(asset.assetId)
-                    foundAssets.push({
-                        asset,
-                        stockId
-                    })
+
+            const cells = row.querySelectorAll('td')
+            for (const cell of cells){
+                const cellText = cell.innerText.trim().toLowerCase()
+                if (cellText.startsWith(asset.uploadedBasename.trim().toLocaleLowerCase() + ".")){
+                    const stockId = row.getAttribute('itemid')
+                    if (stockId){
+                        asset.log('Asset found with id ' + stockId)
+                        foundAssetIds.add(asset.assetId)
+                        foundAssets.push({
+                            asset,
+                            stockId
+                        })
+                    }
+                    break;
                 }
             }
 
@@ -98,7 +103,7 @@ const findAssets = async (assets: Asset[]): Promise<FoundAsset[]> => {
     postdata.append('max_per_page', '800');
     const page = await callPage(
         "POST",
-        '/index.php?page=my_uploads',
+        '/index.php?page=my_uploads&ordby=108&sub=tech',
         undefined,
         postdata
     )
