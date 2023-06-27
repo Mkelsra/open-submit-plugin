@@ -68,28 +68,6 @@ const findAssetsOnPage = (assets: Asset[], root: Document): { found: FoundAsset[
     }
 
     const left = assets.filter(asset => !foundAssetIds.has(asset.assetId))
-    if (left.length > 0){
-        const errorEls = root.querySelectorAll<HTMLElement>('#details_table .kux_processing_failed')
-        for (const errorEl of errorEls){
-            const errorElParent = errorEl.parentElement;
-            if (!errorElParent) continue;
-            const errorMesssage = errorElParent.innerText;
-            const errorTr = errorEl.closest('tr')
-            if (!errorTr) continue;
-            const nameCandidates = errorTr.querySelectorAll('td')
-            for (const nameCandidate of nameCandidates){
-                for (const asset of left){
-                    if (asset.processed){
-                        continue;
-                    }
-                    if (nameCandidate.innerText.trim().toLowerCase().startsWith(asset.uploadedBasename.trim().toLocaleLowerCase() + ".")){
-                        asset.markFailed(errorMesssage)
-                        break;
-                    }
-                }
-            }
-        }
-    }
 
     return {
         found: foundAssets,
@@ -97,22 +75,130 @@ const findAssetsOnPage = (assets: Asset[], root: Document): { found: FoundAsset[
     }
 }
 
+
+const findFailedAssetsOnPage = (assets: Asset[], root: Document): { left: Asset[] } => {
+
+    const processed = new Set<Asset>()    
+
+    const findAssets = (selector: string, callback: (asset: Asset, message: string) => void) => {
+        const errorEls = root.querySelectorAll<HTMLElement>(selector)
+        for (const errorEl of errorEls){
+            const errorElParent = errorEl.parentElement;
+            if (!errorElParent) continue;
+            const message = errorElParent.innerText;
+            const errorTr = errorEl.closest('tr')
+            if (!errorTr) continue;
+            const nameCandidates = errorTr.querySelectorAll('td')
+            for (const nameCandidate of nameCandidates){
+                for (const asset of assets){
+                    if (asset.processed){
+                        continue;
+                    }
+                    if (nameCandidate.innerText.trim().toLowerCase().startsWith(asset.uploadedBasename.trim().toLocaleLowerCase() + ".")){
+                        callback(asset, message)
+                        processed.add(asset)
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (assets.length > 0){
+        findAssets('#details_table .kux_processing_failed', (asset, message) => {
+            asset.markFailed(message)
+        })
+        findAssets('#details_table .kux_processing_scheduled', (asset, message) => {
+            asset.warn('Processing status on microstock: ' + message)
+        })
+    }
+    const left = assets.filter(asset => !processed.has(asset))
+
+    return {
+        left
+    }
+}
+
+const findMaxPageOnPage = (root: Document): number => {
+    const pageSwitchers = [...root.querySelectorAll<HTMLAnchorElement>('form a.Button')]
+    if (pageSwitchers.length === 0){
+        return 0;
+    }
+    const res = pageSwitchers.map(a => {
+        const m = a.href.match(/&at_page=(\d+)/)
+        return m ? parseInt(m[1]) : 0
+      }).reduce((a, c) => Math.max(a, c), 0)
+    return Math.min(res, 100);
+}
+
 const findAssets = async (assets: Asset[]): Promise<FoundAsset[]> => {
 
-    const postdata = new FormData()
-    postdata.append('max_per_page', '800');
-    const page = await callPage(
-        "POST",
-        '/index.php?page=my_uploads&ordby=108&sub=tech',
-        undefined,
-        postdata
-    )
+    let maxPage = null;
+    let page = 0;
 
-    const res = findAssetsOnPage(assets, page)
-    for (const asset of res.left){
+    let found: FoundAsset[] = []
+    let left = assets;
+
+    while ((maxPage === null || page <= maxPage) && left.length > 0){
+        if (page !== 0){
+            await awaitTimeout(5000);
+        }
+        const postdata = new FormData()
+        postdata.append('prefs_submit', 'Search');
+        postdata.append('kux_filter_search', '');
+        postdata.append('in_public_bin', '-1');
+        postdata.append('max_per_page', '800');
+        postdata.append('status', '21');
+        postdata.append('ordby', '108');
+        postdata.append('media_type', '-1');
+        const document = await callPage(
+            "POST",
+            '/index.php?page=my_uploads&sub=tech' + (page !== 0 ? '&at_page=' + page : ''),
+            undefined,
+            postdata
+        )
+
+        if (maxPage === null){
+            maxPage = findMaxPageOnPage(document)
+        }
+        const res = findAssetsOnPage(left, document);
+        found = [
+            ...found,
+            ...res.found
+        ];
+        left = res.left;
+        page++;
+    }
+
+    if (left.length > 0){
+        await awaitTimeout(5000);
+
+        const postdata = new FormData()
+        postdata.append('prefs_submit', 'Search');
+        postdata.append('kux_filter_search', '');
+        postdata.append('in_public_bin', '-1');
+        postdata.append('max_per_page', '800');
+        postdata.append('ordby', '108');
+        postdata.append('media_type', '-1');
+        const document = await callPage(
+            "POST",
+            '/index.php?page=my_uploads&sub=tech',
+            undefined,
+            postdata
+        )
+        const res = findAssetsOnPage(left, document);
+        found = [
+            ...found,
+            ...res.found
+        ];
+        left = res.left
+        left = findFailedAssetsOnPage(left, document).left
+    }
+
+    for (const asset of left){
         asset.markNotFound();
     }
-    return res.found
+    return found
 }
 
 const findReleaseOnStock = async (releaseName: string): Promise<FoundRelease | null> => { 
