@@ -406,8 +406,8 @@ const saveAndSubmitAssets = async (foundAssets: FoundAsset[]): Promise<FoundAsse
                 throw new Error('Unexpected asset type: ' + asset.type)
             }
 
-            if (!isAssetIllustration(asset) && asset.metadata.editorial){
-                formData.set('curator_note', 'Please mark this photo as Editorial Use Only')
+            if (asset.metadata.editorial){
+                formData.set('editorial', 'yes');
             }
 
             if (asset.metadata.country){
