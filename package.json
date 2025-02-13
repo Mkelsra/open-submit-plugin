@@ -1,10 +1,10 @@
 {
-  "name": "translate-test",
+  "name": "open-submit-plugin",
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "build": "rollup --config",
-    "dev": "rollup -w --config"
+    "build": "cross-env NODE_ENV=production rollup --config",
+    "dev": "cross-env NODE_ENV=development rollup -w --config"
   },
   "author": "",
   "license": "ISC",
@@ -12,6 +12,7 @@
     "@rollup/plugin-terser": "^0.4.1",
     "@rollup/plugin-typescript": "^11.1.0",
     "@web/rollup-plugin-copy": "^0.4.0",
+    "cross-env": "^7.0.3",
     "rollup": "^3.21.0",
     "rollup-plugin-copy-glob": "^0.3.2",
     "rollup-plugin-copy-watch": "^0.0.1"

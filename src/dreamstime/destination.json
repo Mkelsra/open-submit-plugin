@@ -1,0 +1,12 @@
+{
+    "type": "destination",
+    "name": "dreamstime",
+    "title": "Dreamstime",
+    "icon": "https://www.dreamstime.com/favicon.ico",
+    "content": {
+        "maxNumberKeywords": 50,
+        "maxNumberCharsInTitle": 80,
+        "maxNumberCharsInDesc": 1000
+    },
+    "locale": {}
+}
