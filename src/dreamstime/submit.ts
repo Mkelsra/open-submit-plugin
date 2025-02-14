@@ -1,7 +1,7 @@
 import { parseCSV } from "../common/csv";
 import { Asset, AssetLink, SubmitContext } from "../common/imstypes";
 import { HttpMethod } from "../common/net";
-import { AuthError } from "../common/utils";
+import { AuthError, awaitTimeout } from "../common/utils";
 
 type DictionaryDef = {
     categories: {
@@ -40,6 +40,7 @@ type FoundRelease = {
 }
 
 async function callTextWithCaptchaCheck(method: HttpMethod, endpoint: string, params?: any, data?: BodyInit | null): Promise<{ text: string; captcha: boolean; }> {
+    await awaitTimeout(100 + Math.round(Math.random() * 500))
     const params_str = params ? new URLSearchParams(params).toString() : '';
     const response = await fetch(endpoint + (params_str ? '?' + params_str : ''), {
         method,
@@ -87,7 +88,7 @@ const findAssetViaFTPHistory = async (assets: Asset[]): Promise<{ left: Asset[],
         const original_filename = csv_data[row][2]
         const status = csv_data[row][3]
         const without_ext = original_filename.replace(/\..+$/, '').trim();
-        file_to_status.set(without_ext, status);
+        file_to_status.set(without_ext, status.trim());
     }
 
     for (const asset of assets) {
@@ -97,16 +98,25 @@ const findAssetViaFTPHistory = async (assets: Asset[]): Promise<{ left: Asset[],
             continue;
         }
         const status = file_to_status.get(main_file_name_without_ext);
-        if (!status) {
+        if (!status || status === 'n/a') {
             left.push(asset);
             continue;
         }
-        const proccessed = status.match(/Processed with image ID (\d+)/);
+
+        const proccessed = status.match(/Processed with (image|video) ID (\d+)/);
         if (proccessed) {
-            found.push({
-                asset: asset,
-                stockId: proccessed[1]
-            })
+            const stock_id = proccessed[2];
+            const stock_id_exists = await checkStockIdExists(stock_id)
+            if (stock_id_exists) {
+                found.push({
+                    asset: asset,
+                    stockId: stock_id
+                })
+            }
+            else {
+                left.push(asset);
+                continue;
+            }
         }
         else {
             asset.markFailed(status)
@@ -119,8 +129,6 @@ const findAssetViaFTPHistory = async (assets: Asset[]): Promise<{ left: Asset[],
 }
 
 const findAssetViaSitePage = async (assets: Asset[]): Promise<{ left: Asset[], found: FoundAsset[] }> => {
-
-    debugger;
     const found: FoundAsset[] = []
     let left: Asset[] = assets;
 
@@ -144,6 +152,11 @@ const findAssetViaSitePage = async (assets: Asset[]): Promise<{ left: Asset[], f
         for (const file_element of file_elements) {
             const filename_el = file_element.querySelector<HTMLElement>('.js-filenamefull');
             if (!filename_el) continue;
+
+            const status = file_element.querySelector<HTMLElement>('.status');
+            if (status && status.innerText === 'Processing...') {
+                continue;
+            }
 
             const filename = filename_el.innerText.replace(/\..+$/, '')?.trim();
 
@@ -212,7 +225,7 @@ const findAssets = async (assets: Asset[]): Promise<FoundAsset[]> => {
 }
 
 const findReleaseOnStock = async (_releaseName: string, releaseMetadata: Record<string, any>, submitStockId: string): Promise<FoundRelease | null> => {
-    const type: 'MR' | 'PR' = releaseMetadata.type;
+    const type: 'MR' | 'PR' = releaseMetadata.releaseType;
     const form_data = new FormData();
     form_data.set('releasestype', type === 'MR' ? 'mr' : 'pr');
     form_data.set('securitycheck', window.securitycheck);
@@ -256,7 +269,7 @@ const findReleaseOnStock = async (_releaseName: string, releaseMetadata: Record<
 
 
 const uploadReleaseFile = async (file: Blob, name: string, releaseMetadata: Record<string, any>) => {
-    const type: 'MR' | 'PR' = releaseMetadata.type;
+    const type: 'MR' | 'PR' = releaseMetadata.releaseType;
     const form_data = new FormData();
     form_data.set('securitycheck', window.securitycheck)
     if (type === 'MR') {
@@ -311,7 +324,6 @@ const uploadReleaseFile = async (file: Blob, name: string, releaseMetadata: Reco
         if (timeFrom) {
             const timeTo = releaseMetadata.shootDate ? new Date(releaseMetadata.shootDate) : new Date()
             const years = Math.floor((timeTo.getTime() - timeFrom.getTime()) / 365.26 / 24 / 3600 / 1000);
-            let age;
             if (years <= 1) age = '1'
             else if (years <= 4) age = '2'
             else if (years <= 9) age = '3'
@@ -361,7 +373,7 @@ const loadReleases = async (foundAssets: FoundAsset[]) => {
                 }
                 try {
                     const releaseAsset = await window.imshost.loadAsset(releaseLink.assetId);
-                    ReleaseAssetIdToType[releaseLink.assetId] = releaseAsset.metadata.type;
+                    ReleaseAssetIdToType[releaseLink.assetId] = releaseAsset.metadata.releaseType;
 
                     const submitMarker = releaseAsset.markers.find(m => m.name === 'submit' && m.subject === DESTINATION_NAME);
                     if (submitMarker && submitMarker.data && submitMarker.data.mid) {
@@ -429,13 +441,19 @@ const getAssetCategories = (categories: string[]): string[] => {
     return res;
 }
 
-async function getEditPage(stockId: string): Promise<{ text: string, document: Document; captcha: boolean; }> {
+const stockIdExistCache = new Map<string, boolean>();
+async function checkStockIdExists(stockId: string): Promise<boolean> {
+    const was_checked = stockIdExistCache.get(stockId);
+    if (was_checked !== undefined) {
+        return was_checked;
+    }
+
     const edit_page_data = new FormData();
     edit_page_data.set('section', 'js-edit');
     edit_page_data.set('pg', '1');
     edit_page_data.set('editImageId', stockId);
     edit_page_data.set('securitycheck', window.securitycheck);
-    const edit_page = await callPageWithCaptchaCheck(
+    const edit_page = await callTextWithCaptchaCheck(
         'POST',
         'https://www.dreamstime.com/ajax/upload/upload_ajax_pages.php',
         {},
@@ -444,7 +462,11 @@ async function getEditPage(stockId: string): Promise<{ text: string, document: D
     if (edit_page.captcha) {
         throw new AuthError();
     }
-    return edit_page;
+
+    const check_result = edit_page.text.indexOf('This media is not available for editing') < 0;
+    stockIdExistCache.set(stockId, check_result);
+
+    return check_result;
 }
 
 const attachRelease = async (foundAsset: FoundAsset, releaseLink: AssetLink) => {
@@ -458,7 +480,6 @@ const attachRelease = async (foundAsset: FoundAsset, releaseLink: AssetLink) => 
     }
 
     const releaseId = ReleaseAssetIdToReleaseId[releaseLink.assetId];
-
     const type = ReleaseAssetIdToType[releaseLink.assetId];
     const attach_form_data = new FormData();
     attach_form_data.set('addremovereleases', '1');
@@ -467,7 +488,6 @@ const attachRelease = async (foundAsset: FoundAsset, releaseLink: AssetLink) => 
     attach_form_data.set('action', 'add');
     attach_form_data.set('value', releaseId);
     attach_form_data.set('securitycheck', window.securitycheck);
-
     const attach_form = await callTextWithCaptchaCheck('POST', 'https://www.dreamstime.com/ajax/upload/upload_ajax_releases.php', {}, attach_form_data);
     if (attach_form.captcha) {
         throw new AuthError();
@@ -599,7 +619,6 @@ async function saveAsset(foundAsset: FoundAsset, submit: boolean, set_categories
 const saveAndSubmitAssets = async (foundAssets: FoundAsset[]): Promise<FoundAsset[]> => {
     const doneAssets: FoundAsset[] = []
     for (const foundAsset of foundAssets) {
-        debugger;
 
         if (foundAsset.asset.metadata.releases && foundAsset.asset.metadata.releases.length > 0) {
             for (const releaseLink of foundAsset.asset.metadata.releases) {
@@ -644,8 +663,6 @@ const processAssets = async (assets: Asset[]) => {
         return
     }
 
-    debugger;
-
     // Load releases
     await loadReleases(foundAssets);
 
@@ -661,35 +678,37 @@ const processAssets = async (assets: Asset[]) => {
 
 }
 
-const captcha = !!document.querySelector('.px-captcha-container');
-if (!/^https:\/\/(www\.)?dreamstime.com\/upload/.test(window.location.toString()) || captcha) {
-    if (captcha) {
-        for (const asset of assets) {
-            asset.log('Captcha found');
-        }
-    }
-    for (const asset of assets) {
-        asset.markUnauthorized();
-    }
-}
-else {
-
-    if (!window.securitycheck) {
-        for (const asset of assets) {
-            asset.markFailed("Security check code not found");
-        }
-    }
-    else {
-        try {
-            await processAssets(assets);
-        }
-        catch (err) {
-            if (err instanceof AuthError) {
+async function initPage() {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        await awaitTimeout(250);
+        const captcha = !!document.querySelector('.px-captcha-container');
+        if (!/^https:\/\/(www\.)?dreamstime.com\/upload/.test(window.location.toString()) || captcha) {
+            if (captcha) {
                 for (const asset of assets) {
-                    asset.markUnauthorized();
+                    asset.log('Captcha found');
                 }
             }
-            else throw err;
+            for (const asset of assets) {
+                asset.markUnauthorized();
+            }
+            return;
+        }
+        else if (window.securitycheck) {
+            try {
+                await processAssets(assets);
+            }
+            catch (err) {
+                if (err instanceof AuthError) {
+                    for (const asset of assets) {
+                        asset.markUnauthorized();
+                    }
+                }
+                else throw err;
+            }
+            return;
         }
     }
+    throw new Error("Security check code not found")
 }
+
+await initPage();

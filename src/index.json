@@ -33,10 +33,10 @@
     ],
     "locale": {
         "en": {
-            "description": "Adds support submitting to Pond5"
+            "description": "Adds support submitting to Pond5 and Dreamstime"
         },
         "ru": {
-            "description": "Добавляет поддержку сабмита на Pond5"
+            "description": "Добавляет поддержку сабмита на Pond5 и Dreamstime"
         }
     }
 }
