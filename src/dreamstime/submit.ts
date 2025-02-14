@@ -4,8 +4,11 @@ import { HttpMethod } from "../common/net";
 import { AuthError } from "../common/utils";
 
 type DictionaryDef = {
+    categories: {
+        [cat: string]: string
+    },
     countries: {
-        [country: string]: string
+        [cat: string]: string
     }
 }
 
@@ -23,6 +26,8 @@ declare const submitContext: SubmitContext<DictionaryDef, SettingsDef>;
 declare const assets: Asset[];
 
 const DESTINATION_NAME = 'dreamstime'
+const CATS = submitContext.dictionaries.categories;
+const COUNTRIES = submitContext.dictionaries.countries;
 
 type FoundAsset = {
     asset: Asset,
@@ -75,6 +80,10 @@ const findAssetViaFTPHistory = async (assets: Asset[]): Promise<{ left: Asset[],
     // Note: 0th row is header
     const file_to_status = new Map<string, string>();
     for (let row = 1; row < csv_data.length; row++) {
+        const type = csv_data[row][1]
+        if (type === 'additional') {
+            continue;
+        }
         const original_filename = csv_data[row][2]
         const status = csv_data[row][3]
         const without_ext = original_filename.replace(/\..+$/, '').trim();
@@ -183,13 +192,17 @@ const findAssets = async (assets: Asset[]): Promise<FoundAsset[]> => {
     let res: FoundAsset[] = [];
     let left_assets = assets;
 
-    const found_in_ftp = await findAssetViaFTPHistory(left_assets);
-    left_assets = found_in_ftp.left;
-    res = [...res, ...found_in_ftp.found];
+    if (left_assets.length > 0) {
+        const found_in_ftp = await findAssetViaFTPHistory(left_assets);
+        left_assets = found_in_ftp.left;
+        res = [...res, ...found_in_ftp.found];
+    }
 
-    const found_in_page = await findAssetViaSitePage(left_assets);
-    left_assets = found_in_page.left;
-    res = [...res, ...found_in_page.found];
+    if (left_assets.length > 0) {
+        const found_in_page = await findAssetViaSitePage(left_assets);
+        left_assets = found_in_page.left;
+        res = [...res, ...found_in_page.found];
+    }
 
     for (const asset of left_assets) {
         asset.markNotFound();
@@ -198,34 +211,426 @@ const findAssets = async (assets: Asset[]): Promise<FoundAsset[]> => {
     return res;
 }
 
-const findReleaseOnStock = async (releaseName: string): Promise<FoundRelease | null> => {
+const findReleaseOnStock = async (_releaseName: string, releaseMetadata: Record<string, any>, submitStockId: string): Promise<FoundRelease | null> => {
+    const type: 'MR' | 'PR' = releaseMetadata.type;
+    const form_data = new FormData();
+    form_data.set('releasestype', type === 'MR' ? 'mr' : 'pr');
+    form_data.set('securitycheck', window.securitycheck);
+    form_data.set('imageid', submitStockId);
+    form_data.set('sorting', 'lastadded');
+    form_data.set('filter', type == 'MR' ? releaseMetadata.modelLastName : releaseMetadata.propertyName);
+    form_data.set('location', 'submit');
+
+    const release_search = await callPageWithCaptchaCheck(
+        'POST',
+        'https://www.dreamstime.com/ajax/upload/upload_ajax_releases.php',
+        {},
+        form_data
+    )
+    if (release_search.captcha) {
+        throw new AuthError()
+    }
+
+    const search_name = (
+        type === 'MR' ?
+            `${releaseMetadata.modelLastName} ${releaseMetadata.modelFirstName}` :
+            `${releaseMetadata.propertyName}`
+    ).trim().toLowerCase();
+
+    const release_elements = release_search.document.querySelectorAll('.release-item');
+    for (const elem of release_elements) {
+        const check = elem.querySelector<HTMLElement>('input[type="checkbox"]');
+        if (!check) continue;
+
+        const check_name = (check.dataset.name ?? '').trim().toLowerCase();
+        if (check_name === search_name) {
+            return {
+                rejected: false,
+                stockId: check.id
+            }
+        }
+    }
+
     return null;
 }
 
 
-const uploadReleaseFile = async (file: Blob, name: string, type: string) => {
+const uploadReleaseFile = async (file: Blob, name: string, releaseMetadata: Record<string, any>) => {
+    const type: 'MR' | 'PR' = releaseMetadata.type;
+    const form_data = new FormData();
+    form_data.set('securitycheck', window.securitycheck)
+    if (type === 'MR') {
+        if (!releaseMetadata.modelFirstName) {
+            throw new Error('Release ' + name + " has no model firstname");
+        }
+        if (!releaseMetadata.modelLastName) {
+            throw new Error('Release ' + name + " has no model lastname");
+        }
+        form_data.set('fname', releaseMetadata.modelFirstName)
+        form_data.set('lname', releaseMetadata.modelLastName)
+        form_data.set('gender', releaseMetadata.gender === 'FEMALE' ? '2' : '1');
 
+        let ethnics = '6';
+        switch (releaseMetadata.modelEthnicity) {
 
+            case "CN":
+            case "EA":
+            case "JA":
+            case "SA":
+            case "SE":
+                ethnics = "1";
+                break;
+
+            case "AF":
+            case "AA":
+            case "BL":
+                ethnics = "2";
+                break;
+
+            case "WH":
+            case "ME":
+                ethnics = "3";
+                break;
+
+            case "BR":
+            case "LA":
+                ethnics = "4";
+                break;
+
+            case "NA":
+            case "PI":
+            case "OT":
+                ethnics = "6";
+                break;
+
+        }
+        form_data.set('ethnics', ethnics);
+
+        let age = '';
+        const timeFrom = releaseMetadata.modelBirthdate ? new Date(releaseMetadata.modelBirthdate) : null;
+        if (timeFrom) {
+            const timeTo = releaseMetadata.shootDate ? new Date(releaseMetadata.shootDate) : new Date()
+            const years = Math.floor((timeTo.getTime() - timeFrom.getTime()) / 365.26 / 24 / 3600 / 1000);
+            let age;
+            if (years <= 1) age = '1'
+            else if (years <= 4) age = '2'
+            else if (years <= 9) age = '3'
+            else if (years <= 15) age = '4'
+            else if (years <= 20) age = '5'
+            else if (years <= 30) age = '6'
+            else if (years <= 45) age = '7'
+            else if (years <= 65) age = '8'
+            else age = '9'
+        }
+        if (!age) {
+            throw new Error('Release ' + name + " has no date of birth");
+        }
+        form_data.set('agegroup', age);
+
+        const country = COUNTRIES.hasOwnProperty(releaseMetadata.country) && COUNTRIES[releaseMetadata.country] && COUNTRIES[releaseMetadata.country] !== '0' ?
+            COUNTRIES[releaseMetadata.country] : null;
+        if (!country) {
+            throw new Error('Release ' + name + " has no country");
+        }
+        form_data.set('country', country);
+    }
+    else {
+        if (!releaseMetadata.propertyName) {
+            throw new Error('Release ' + name + " has no property name");
+        }
+        form_data.set('name', releaseMetadata.propertyName)
+    }
+
+    form_data.set('action', 'add');
+    form_data.set('file-0', file, name)
+    const upload = await callTextWithCaptchaCheck('POST', `https://www.dreamstime.com/ajax/account_${type === "MR" ? 'mr' : 'pr'}-library.php`, {}, form_data)
+    if (upload.captcha) {
+        throw new AuthError();
+    }
 }
 
 const ReleaseAssetIdToReleaseId: { [assetId: string]: string } = {}; // cache of releases
+const ReleaseAssetIdToType: { [assetId: string]: 'MR' | 'PR' } = {}; // cache of releases
 const loadReleases = async (foundAssets: FoundAsset[]) => {
+    for (const { asset, stockId } of foundAssets) {
+        if (asset.metadata.releases && asset.metadata.releases.length > 0) {
+            asset.log('Will upload releases')
+            for (const releaseLink of asset.metadata.releases) {
+                if (ReleaseAssetIdToReleaseId.hasOwnProperty(releaseLink.assetId)) {
+                    continue;
+                }
+                try {
+                    const releaseAsset = await window.imshost.loadAsset(releaseLink.assetId);
+                    ReleaseAssetIdToType[releaseLink.assetId] = releaseAsset.metadata.type;
 
+                    const submitMarker = releaseAsset.markers.find(m => m.name === 'submit' && m.subject === DESTINATION_NAME);
+                    if (submitMarker && submitMarker.data && submitMarker.data.mid) {
+                        ReleaseAssetIdToReleaseId[releaseLink.assetId] = submitMarker.data.mid;
+                    }
+                    else {
+                        const releaseMainFile = releaseAsset.mainFile;
+                        if (!releaseMainFile) {
+                            throw new Error('Main file of release not found')
+                        }
+                        const releaseMainBasename = releaseMainFile.name.replace(/\..*?$/, '')
+                        let mid = null
+                        if (submitMarker) {
+                            const stockRelease = await findReleaseOnStock(releaseMainBasename, releaseAsset.metadata, stockId)
+                            if (stockRelease) {
+                                if (stockRelease.rejected) {
+                                    asset.log('Release ' + releaseMainFile.name + ' found but was rejected. Will try to upload it again')
+                                }
+                                else {
+                                    mid = stockRelease.stockId;
+                                }
+                            }
+                        }
+                        if (!mid) {
+                            asset.log('Will upload release: ' + releaseMainFile.name)
+                            const blob = await releaseMainFile.getBlob();
+                            await uploadReleaseFile(blob, releaseMainFile.name, releaseAsset.metadata)
+
+                            asset.log('Release was uploaded. Will try to find it')
+                            for (let i = 0; i < 3; i++) {
+                                await awaitTimeout(100)
+                                const stockRelease = await findReleaseOnStock(releaseMainBasename, releaseAsset.metadata, stockId)
+                                if (stockRelease) {
+                                    if (stockRelease.rejected) {
+                                        throw new Error('Release ' + releaseMainFile.name + ' was rejected')
+                                    }
+                                    mid = stockRelease.stockId;
+                                    break;
+                                }
+                            }
+                            if (!mid) throw new Error('Uploaded release not found on stock')
+                        }
+                        await releaseAsset.addMarker('submit', DESTINATION_NAME, {
+                            mid
+                        })
+                        ReleaseAssetIdToReleaseId[releaseAsset.assetId] = mid;
+                    }
+                }
+                catch (err: any) {
+                    asset.warn(`Cannot upload release ${releaseLink.title}: ${err.message}`)
+                }
+            }
+        }
+    }
+}
+
+const getAssetCategories = (categories: string[]): string[] => {
+    if (!Array.isArray(categories)) return [];
+    const res: string[] = []
+    for (const category of categories) {
+        if (CATS.hasOwnProperty(category) && CATS[category] !== null) {
+            res.push(CATS[category])
+        }
+    }
+    return res;
+}
+
+async function getEditPage(stockId: string): Promise<{ text: string, document: Document; captcha: boolean; }> {
+    const edit_page_data = new FormData();
+    edit_page_data.set('section', 'js-edit');
+    edit_page_data.set('pg', '1');
+    edit_page_data.set('editImageId', stockId);
+    edit_page_data.set('securitycheck', window.securitycheck);
+    const edit_page = await callPageWithCaptchaCheck(
+        'POST',
+        'https://www.dreamstime.com/ajax/upload/upload_ajax_pages.php',
+        {},
+        edit_page_data
+    )
+    if (edit_page.captcha) {
+        throw new AuthError();
+    }
+    return edit_page;
+}
+
+const attachRelease = async (foundAsset: FoundAsset, releaseLink: AssetLink) => {
+    foundAsset.asset.log('Attach release ' + releaseLink.title)
+
+    if (!ReleaseAssetIdToReleaseId.hasOwnProperty(releaseLink.assetId)) {
+        throw new Error('Release ' + releaseLink.title + " not found")
+    }
+    if (!ReleaseAssetIdToType.hasOwnProperty(releaseLink.assetId)) {
+        throw new Error('Release ' + releaseLink.title + " has invalid type")
+    }
+
+    const releaseId = ReleaseAssetIdToReleaseId[releaseLink.assetId];
+
+    const type = ReleaseAssetIdToType[releaseLink.assetId];
+    const attach_form_data = new FormData();
+    attach_form_data.set('addremovereleases', '1');
+    attach_form_data.set('imageid', foundAsset.stockId);
+    attach_form_data.set('releasetype', type === 'MR' ? 'mr' : 'pr');
+    attach_form_data.set('action', 'add');
+    attach_form_data.set('value', releaseId);
+    attach_form_data.set('securitycheck', window.securitycheck);
+
+    const attach_form = await callTextWithCaptchaCheck('POST', 'https://www.dreamstime.com/ajax/upload/upload_ajax_releases.php', {}, attach_form_data);
+    if (attach_form.captcha) {
+        throw new AuthError();
+    }
+}
+
+async function generateAiCategories(stockId: string): Promise<string[]> {
+    const form_data = new FormData();
+    form_data.set('ai', 'categories');
+    form_data.set('donetypetitle', '0');
+    form_data.set('imageid', stockId);
+    form_data.set('securitycheck', window.securitycheck);
+    const res = await callTextWithCaptchaCheck(
+        'POST',
+        'https://www.dreamstime.com/ajax/upload/upload_ajax_autofill.php',
+        {},
+        form_data
+    )
+    if (res.captcha) {
+        throw new AuthError();
+    }
+    const parsed_ai = JSON.parse(res.text);
+    return [
+        parsed_ai.cat1.toString(),
+        parsed_ai.cat2.toString(),
+        parsed_ai.cat3.toString(),
+    ]
 }
 
 
-const MAX_KEYWORDS = 50;
-const MAX_TITLE_LEN = 80;
-const MAX_DESCRIPTION_LEN = 1000;
+async function saveAsset(foundAsset: FoundAsset, submit: boolean, set_categories?: string[]): Promise<void> {
+    foundAsset.asset.log('Will ' + (submit ? 'submit' : 'save'))
 
+    const saving_data = new FormData();
+    saving_data.set('mediasubmit', '1');
 
-const attachRelease = async (foundAsset: FoundAsset, releaseLink: AssetLink) => {
+    const saving_data_info = {
+        "mediaid": foundAsset.stockId,
+        "title": foundAsset.asset.metadata.title ?? '',
+        "description": foundAsset.asset.metadata.description ?? '',
+        "keywords": foundAsset.asset.metadata.keywords ? foundAsset.asset.metadata.keywords.join(' ') : '',
+        "cat1": "0",
+        "cat2": "0",
+        "cat3": "0",
+        "newsroom": '0',
+        "license": 0,
+        "sr_price": "",
+        "usereco": false,
+        "customprice": false,
+        "resubmission": "0",
+        "notifyadmins": "",
+        "rfll": 0,
+        "newsworthy": 0,
+        "exclusive": 0,
+        "digitallymodel": 0,
+        "mediaType": foundAsset.asset.type === 'video' ? 'video' : 'image'
+    }
 
+    if (foundAsset.asset.metadata.editorial) {
+        saving_data_info.newsroom = '1';
+        saving_data_info.license = 16;
+        saving_data_info.sr_price = ''
+        saving_data_info.usereco = false;
+        saving_data_info.customprice = false;
+    }
+    else {
+        saving_data_info.newsroom = '0'
+        const licenseWEl = foundAsset.asset.metadata.licenseWEl !== false
+        const licensePEl = foundAsset.asset.metadata.licensePEl !== false && (foundAsset.asset.type === 'photo' || foundAsset.asset.type === 'illustration' || foundAsset.asset.type === 'vector');
+        const licenseSREl = foundAsset.asset.metadata.licenseSREl !== false
 
+        const license_key = `${licenseWEl ? '1' : '0'}${licensePEl ? '1' : '0'}${licenseSREl ? '1' : '0'}`
+        saving_data_info.license = ({
+            '000': 16,
+            '001': 17,
+            '010': 18,
+            '011': 19,
+            '100': 20,
+            '101': 21,
+            '110': 22,
+            '111': 23
+        } as { [key: string]: number })[license_key];
+        if (saving_data_info.license === 17 || saving_data_info.license === 19 ||
+            saving_data_info.license === 21 || saving_data_info.license === 23
+        ) {
+            if (foundAsset.asset.metadata.licenseSRElPrice) {
+                saving_data_info.sr_price = foundAsset.asset.metadata.licenseSRElPrice;
+                saving_data_info.usereco = false;
+                saving_data_info.customprice = true;
+            }
+            else {
+                saving_data_info.sr_price = '';
+                saving_data_info.usereco = true;
+                saving_data_info.customprice = false;
+            }
+        }
+    }
+
+    let cats = set_categories ? set_categories : getAssetCategories(foundAsset.asset.metadata.categories);
+    const cats_arr = cats.slice(0, 3);
+    if (foundAsset.asset.metadata.aiGenerated) {
+        cats_arr[Math.max(cats_arr.length - 1, 0)] = '212' // AI Generated
+    }
+    saving_data_info.cat1 = cats_arr[0] ?? '0';
+    saving_data_info.cat2 = cats_arr[1] ?? '0';
+    saving_data_info.cat3 = cats_arr[2] ?? '0';
+
+    saving_data.set('jsonSMLD', encodeURIComponent(JSON.stringify(saving_data_info)))
+    saving_data.set('madiastatus', '1');
+    saving_data.set('saveall', submit ? '0' : '1');
+    saving_data.set('openeditem', foundAsset.stockId);
+    saving_data.set('securitycheck', window.securitycheck);
+
+    const save = await callTextWithCaptchaCheck(
+        'POST',
+        'https://www.dreamstime.com/ajax/upload/upload_ajax_submit.php',
+        {},
+        saving_data
+    )
+    if (save.captcha) {
+        throw new AuthError();
+    }
+
+    if (save.text.indexOf('saved successfully') < 0 && save.text.indexOf('submitted successfully') < 0) {
+        throw new Error(save.text);
+    }
 }
 
 const saveAndSubmitAssets = async (foundAssets: FoundAsset[]): Promise<FoundAsset[]> => {
-    return [];
+    const doneAssets: FoundAsset[] = []
+    for (const foundAsset of foundAssets) {
+        debugger;
+
+        if (foundAsset.asset.metadata.releases && foundAsset.asset.metadata.releases.length > 0) {
+            for (const releaseLink of foundAsset.asset.metadata.releases) {
+                await attachRelease(foundAsset, releaseLink)
+            }
+        }
+
+        try {
+            let is_done = false;
+            let set_categories: string[] | undefined = undefined;
+            if (!foundAsset.asset.metadata.categories || foundAsset.asset.metadata.categories.length === 0) {
+                await saveAsset(foundAsset, false)
+                foundAsset.asset.log('Generate categories')
+                set_categories = await generateAiCategories(foundAsset.stockId);
+                is_done = !submitContext.settings.clickSubmit
+            }
+
+            if (!is_done) {
+                await saveAsset(foundAsset, submitContext.settings.clickSubmit, set_categories)
+            }
+            doneAssets.push(foundAsset)
+        }
+        catch (err: any) {
+            if (err instanceof AuthError) {
+                throw err;
+            }
+            foundAsset.asset.markFailed(err.message);
+        }
+    }
+
+    return doneAssets
 }
 
 const processAssets = async (assets: Asset[]) => {
@@ -238,6 +643,8 @@ const processAssets = async (assets: Asset[]) => {
     if (foundAssets.length === 0) {
         return
     }
+
+    debugger;
 
     // Load releases
     await loadReleases(foundAssets);
@@ -253,9 +660,6 @@ const processAssets = async (assets: Asset[]) => {
     }
 
 }
-
-await new Promise((res) => setTimeout(res, 4000));
-debugger;
 
 const captcha = !!document.querySelector('.px-captcha-container');
 if (!/^https:\/\/(www\.)?dreamstime.com\/upload/.test(window.location.toString()) || captcha) {

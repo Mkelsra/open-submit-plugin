@@ -6,7 +6,57 @@
     "content": {
         "maxNumberKeywords": 50,
         "maxNumberCharsInTitle": 80,
-        "maxNumberCharsInDesc": 1000
+        "maxNumberCharsInDesc": 1000,
+        "additionalProps": [
+            {
+                "name": "licenseWEl",
+                "title": {
+                    "@t": "licenseWEl"
+                },
+                "type": "boolean",
+                "default": true
+            },
+            {
+                "name": "licensePEl",
+                "title": {
+                    "@t": "licensePEl"
+                },
+                "type": "boolean",
+                "default": true
+            },
+            {
+                "name": "licenseSREl",
+                "title": {
+                    "@t": "licenseSREl"
+                },
+                "type": "boolean",
+                "default": true
+            },
+            {
+                "name": "licenseSRElPrice",
+                "title": {
+                    "@t": "licenseSRElPrice"
+                },
+                "type": "integer",
+                "options": {
+                    "min": 250,
+                    "max": 9999
+                }
+            }
+        ]
     },
-    "locale": {}
+    "locale": {
+        "en": {
+            "licenseWEl": "Web Usage (W-EL)",
+            "licensePEl": "Print Usage (P-EL)",
+            "licenseSREl": "Sell the rights (SR-EL) ",
+            "licenseSRElPrice": "Custom price for SR-EL"
+        },
+        "ru": {
+            "licenseWEl": "Веб-использование (W-EL)",
+            "licensePEl": "Использование печати (P-EL)",
+            "licenseSREl": "Продажа прав (SR-EL)",
+            "licenseSRElPrice": "Цена для SR-EL"
+        }
+    }
 }
