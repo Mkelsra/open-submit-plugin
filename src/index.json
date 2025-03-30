@@ -27,7 +27,7 @@
             "@jsonfile": "dreamstime/submit.json"
         }
     ],
-    "api": "2.4.0",
+    "api": "2.9.0",
     "tags": [
         "submit"
     ],

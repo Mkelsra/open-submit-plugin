@@ -3,12 +3,12 @@ export type Asset = {
     title: string,
     uploadedBasename: string,
     type: string,
-    metadata: {[prop:string]: any},
+    metadata: { [prop: string]: any },
     files: AssetFile[],
     get mainFile(): AssetFile | undefined,
     markers: AssetMarker[],
     addMarker: (markerName: string, subject: string | null, data?: object) => Promise<void>
-    processed: boolean,        
+    processed: boolean,
     log: (message: string) => void,
     warn: (message: string) => void,
     progress: (progress: number, prepare: boolean) => void,
@@ -25,7 +25,7 @@ export type AssetLink = {
     assetId: string
 }
 
-export type AssetFile =  {
+export type AssetFile = {
     name: string,
     role: string
     getBlob: () => Promise<Blob>
@@ -48,11 +48,17 @@ export type SubmitContext<D, S> = {
 }
 
 interface IImsHost {
-     loadAsset(assetId: string): Promise<Asset>,
-    
-     getProcessSharedState(): Promise<{
-         [step: string]: {[prop:string]: any}
-     }>
+    loadAsset(assetId: string): Promise<Asset>,
+
+    getProcessSharedState(): Promise<{
+        [step: string]: { [prop: string]: any }
+    }>
+
+    window: {
+        setShowState(val: boolean): void;
+        setInstruction(instruction: { text: string, link?: string, linkText?: string }): void;
+        clearSession(): void
+    }
 }
 
 declare global {
